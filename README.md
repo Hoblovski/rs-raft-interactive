@@ -10,7 +10,7 @@ May be generalized to a TLA+ like framework.
 ## Run raft from scratch
 ```
 cargo run
-# or
+# or better (has history recording in hist.txt)
 ./init -
 ```
 
@@ -33,3 +33,14 @@ See fig8.txt.
 Extras:
 * `// ...` comments
 * `@quit` quit directives and enter interactive mode
+
+----------------
+
+# TODO
+dropping messages
+
+duplicating messages
+
+snapshot
+
+reconfiguration

@@ -4,6 +4,9 @@
 import sys
 filein = sys.argv[1]
 
+if filein == "-":
+    exit(0)
+
 with open(filein, "r") as fin:
     for l in fin.read().splitlines():
         if len(l.strip()) == 0:

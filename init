@@ -1,0 +1,5 @@
+#!/bin/zsh
+if ! cargo build; then exit -1; fi
+
+initfile=${1:-"init.txt"}
+{ ./tools/norminit $initfile ; cat } | tee hist.txt | cargo run

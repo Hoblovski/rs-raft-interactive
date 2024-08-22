@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+# normalize init directives (strip empty lines, comments)
+
+import sys
+filein = sys.argv[1]
+
+with open(filein, "r") as fin:
+    for l in fin.read().splitlines():
+        if len(l.strip()) == 0:
+            continue
+        if l.startswith('//'):
+            continue
+        if l == "@quit":
+            break
+        print(l.strip())

@@ -162,6 +162,16 @@ struct RaftNode {
 }
 
 impl RaftNode {
+    fn restart(&mut self) {
+        self.commit_index = 0;
+        self.last_applied = 0;
+        self.next_index.fill(-1);
+        self.match_index.fill(-1);
+        self.state = NodeState::Follower;
+        self.votes_received.clear();
+        // keep: current_term, voted_for, log
+    }
+
     fn new_follower(id: i32, network: Rc<Network>, network_size: usize) -> Self {
         let init_entry = LogEntryValue {
             ent: LogEntry { term: 0, index: 0 },
@@ -257,7 +267,6 @@ impl RaftNode {
 impl RaftNode {
     //-----------------------------
     // STEP timeout
-    // Follower -> Candidate
     fn heartbeat_timeout_cond(&mut self) -> bool {
         self.state == NodeState::Follower || self.state == NodeState::Candidate
     }
@@ -374,6 +383,9 @@ impl RaftNode {
         let votefor_ok = !self.voted_for.is_some_and(|x| x != from);
         let granted = votefor_ok && log_ok;
 
+        if granted {
+            self.voted_for = Some(from);
+        }
         self.reply_request_vote(from, granted);
     }
 
@@ -505,8 +517,12 @@ impl RaftNode {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum WorldStep {
+    // misc
+    // crashed nodes cannot initiate nodewise actions and cannot receive messages
+    Crash { id: i32 },
+    Restart { id: i32 },
     // spontaneous actions:
     HeartBeatTimeout { id: i32 },
     ClientRequest { id: i32, value: Value },
@@ -521,6 +537,7 @@ enum WorldStep {
 struct World {
     network: Rc<Network>,
     nodes: Vec<RaftNode>,
+    crashed: Vec<i32>,
     n_steps: usize,
     n_nodes: usize,
 }
@@ -530,6 +547,14 @@ impl World {
         let mut parts = s.split_ascii_whitespace();
         let leader = parts.next().unwrap();
         match leader {
+            "crash" => {
+                let id = parts.next().unwrap().parse::<i32>().unwrap();
+                Some(WorldStep::Crash { id })
+            }
+            "restart" => {
+                let id = parts.next().unwrap().parse::<i32>().unwrap();
+                Some(WorldStep::Restart { id })
+            }
             "timeout" => {
                 let id = parts.next().unwrap().parse::<i32>().unwrap();
                 Some(WorldStep::HeartBeatTimeout { id })
@@ -586,6 +611,7 @@ impl World {
         Self {
             network,
             nodes,
+            crashed: vec![],
             n_nodes,
             n_steps: 0,
         }
@@ -593,8 +619,13 @@ impl World {
 
     fn candidate_steps(&mut self) -> Vec<WorldStep> {
         let mut cand_steps: Vec<WorldStep> = vec![];
-        // spontaneous node-wise actions
+        // node-wise actions
         for id in 0..self.n_nodes {
+            if self.crashed.contains(&(id as i32)) {
+                cand_steps.push(WorldStep::Restart { id: id as i32 });
+                continue;
+            }
+            cand_steps.push(WorldStep::Crash { id: id as i32 });
             let node = &mut self.nodes[id];
             if node.heartbeat_timeout_cond() {
                 cand_steps.push(WorldStep::HeartBeatTimeout { id: id as i32 });
@@ -622,6 +653,9 @@ impl World {
         }
         // message-wise actions
         for (msg_idx, msg) in self.network.msgs.borrow().iter().enumerate() {
+            if self.crashed.contains(&msg.to) {
+                continue;
+            }
             match msg.data {
                 MessageData::RequestVoteRequest { .. } => {
                     cand_steps.push(WorldStep::RecvRequestVoteRequest {
@@ -649,6 +683,7 @@ impl World {
                 }
             }
         }
+        cand_steps.sort();
         cand_steps
     }
 
@@ -656,9 +691,9 @@ impl World {
         println!("[dump nodes] ==========");
         for node in &self.nodes {
             println!(
-                "{} ::  {}({})",
+                "{} :: {} at {}",
                 node.id,
-                node.state.one_letter(),
+                if self.crashed.contains(&node.id) { "X" } else { node.state.one_letter() },
                 node.current_term
             );
             println!(
@@ -717,6 +752,14 @@ impl World {
 
     fn execute_step(&mut self, choice: &WorldStep) {
         match *choice {
+            WorldStep::Crash { id } => {
+                self.crashed.push(id);
+            }
+            WorldStep::Restart { id } => {
+                let idx = self.crashed.iter().position(|x| x == &id).unwrap();
+                let id = self.crashed.remove(idx);
+                self.nodes[id as usize].restart();
+            }
             WorldStep::HeartBeatTimeout { id } => {
                 let node = &mut self.nodes[id as usize];
                 assert!(node.heartbeat_timeout_cond());

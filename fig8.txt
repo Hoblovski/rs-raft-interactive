@@ -13,29 +13,50 @@ recv 0
 recv 0
 recv 0
 recv 0
+// 0 -> leader
+
 client 0
 ae 0 1
 recv 0
 recv 0
+// logs: 01 01 0 0 0
+crash 0
+
 timeout 4
 rv 4 1
-rv 4 2
-rv 4 3
-recv 0
-recv 0
 recv 0
 rv 4 1
+recv 0
+recv 0
 rv 4 2
+recv 0
+rv 4 2
+recv 0
+recv 0
+rv 4 3
+recv 0
 rv 4 3
 recv 0
 recv 0
-recv 0
-recv 0
-recv 0
-recv 0
+// 4 -> leader
+
 client 4
-ae 4 0
+crash 4
+
+restart 0
+timeout 0
+rv 0 1
 recv 0
+recv 0
+rv 0 2
+recv 0
+recv 0
+// 0 wants to be leader in term 2
+// got a vote from 1
+// since 2 3 voted for 4 in term 2
+// 0 will never win election in term 2
+// after a while, it campaigns for the next term
+
 timeout 0
 rv 0 1
 recv 0
@@ -47,31 +68,47 @@ recv 0
 rv 0 2
 recv 0
 recv 0
+// 0 -> leader at term 3
+// 01 01 0 0 02
+
 ae 0 2
 recv 0
 recv 0
 ae 0 2
 recv 0
 recv 0
-ae 0 4
-recv 0
+// 0 replicated log (1,1) to 3
+// 01 01 01 0 02
+
+client 0
+crash 0
+// 013 01 01 0 02
+
+restart 4
 timeout 4
-rv 4 0
+rv 4 3
 recv 0
-rv 4 0
+rv 4 3
 recv 0
 recv 0
+rv 4 2
+recv 0
+recv 0
+// now 4 realized in term 3 it cannot win election
+timeout 4
 rv 4 1
 recv 0
 rv 4 1
 recv 0
 recv 0
-ae 4 0
+rv 4 2
+recv 0
+rv 4 2
 recv 0
 recv 0
-ae 4 0
-recv 0
-recv 0
+// 4 -> leader
+// 013 01 01 0 02
+
 ae 4 1
 recv 0
 recv 0
@@ -80,8 +117,6 @@ recv 0
 recv 0
 ae 4 2
 recv 0
-ae 4 2
-recv 0
 recv 0
 ae 4 2
 recv 0
@@ -94,3 +129,21 @@ recv 0
 ae 4 3
 recv 0
 recv 0
+// 4 replicated to 1 2 3 except 0
+// 013 02 02 02 02
+
+// 4 can also overwrite 0
+restart 0
+ae 4 0
+recv 0
+ae 4 0
+recv 0
+recv 0
+ae 4 0
+recv 0
+recv 0
+// 02 02 02 02 02
+// the previous (1,1) entry, already on a majority
+// has been purged!
+// thus
+//	on majority != committed
